@@ -1,8 +1,11 @@
 /*
-中国联通首页浮窗净化 - 测试版
+中国联通个人净化 - 测试版
 
-参考：
+首页浮窗规则参考：
 https://github.com/Thelongdarkorg/loon-plugins
+
+我的钱包规则参考墨鱼：
+https://github.com/ddgksf2013/Rewrite
 */
 
 (() => {
@@ -19,16 +22,30 @@ https://github.com/Thelongdarkorg/loon-plugins
     return $done({});
   }
 
-  const popupKey = "HomeFusion.fuchuangAdv_A8";
-
-  if (
-    body &&
-    typeof body === "object" &&
-    Object.prototype.hasOwnProperty.call(body, popupKey)
-  ) {
-    delete body[popupKey];
-    return $done({ body: JSON.stringify(body) });
+  if (!body || typeof body !== "object") {
+    return $done({});
   }
 
-  $done({});
+  const url = $request.url;
+  let modified = false;
+
+  // 首页：删除浮窗推广字段
+  if (url.includes("/clientIndex/homefusion/fuInter")) {
+    const popupKey = "HomeFusion.fuchuangAdv_A8";
+
+    if (Object.prototype.hasOwnProperty.call(body, popupKey)) {
+      delete body[popupKey];
+      modified = true;
+    }
+  }
+
+  // 我的页面：清空钱包接口数据，尝试隐藏借钱入口
+  if (/\/clientMyPage\/v\d\/api\/myWallet/.test(url)) {
+    if (Object.prototype.hasOwnProperty.call(body, "data")) {
+      body.data = {};
+      modified = true;
+    }
+  }
+
+  $done(modified ? { body: JSON.stringify(body) } : {});
 })();
