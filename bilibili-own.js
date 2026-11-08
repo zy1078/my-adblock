@@ -1,14 +1,12 @@
 /*
-哔哩哔哩个人净化 - 测试版
+哔哩哔哩个人净化 - 临时诊断版
 
-参考：
-https://github.com/Thelongdarkorg/loon-plugins
-
-处理开屏展示列表和首页带明确广告标记的卡片。
+日志只记录处理状态和数量，不记录商品、视频或账号内容。
 */
 
 (() => {
   if (typeof $response === "undefined" || !$response.body) {
+    console.log("B站诊断：没有响应内容");
     return $done({});
   }
 
@@ -17,15 +15,16 @@ https://github.com/Thelongdarkorg/loon-plugins
   try {
     body = JSON.parse($response.body);
   } catch (error) {
+    console.log("B站诊断：响应不是有效的 JSON");
     return $done({});
   }
 
   if (!body || typeof body !== "object") {
+    console.log("B站诊断：响应格式不符合预期");
     return $done({});
   }
 
-  // 如果响应中有超出 JS 安全范围的数字，原样放行，
-  // 避免重新序列化时改变视频或其他内容的数字 ID。
+  // 大数字保护：发现不安全数字时原样放行
   const pending = [body];
 
   while (pending.length > 0) {
@@ -38,6 +37,7 @@ https://github.com/Thelongdarkorg/loon-plugins
         (Number.isInteger(value) && !Number.isSafeInteger(value))
       )
     ) {
+      console.log("B站诊断：触发大数字保护，响应未修改");
       return $done({});
     }
 
@@ -51,7 +51,7 @@ https://github.com/Thelongdarkorg/loon-plugins
   const url = $request.url || "";
   let modified = false;
 
-  // 开屏：清空展示和事件列表
+  // 开屏处理
   if (/\/x\/v2\/splash\/(list|show|event\/list2)(?:\?|$)/.test(url)) {
     if (
       body.data &&
@@ -67,18 +67,18 @@ https://github.com/Thelongdarkorg/loon-plugins
     }
   }
 
-  // 首页：过滤带明确广告标记的卡片
-  else if (
-    /\/x\/v2\/feed\/index(?:\?|$)/.test(url) &&
-    Array.isArray(body.data?.items)
-  ) {
-    const adTypes = [
-      "ad_av",
-      "ad_web_s",
-      "ad_web_gif"
-    ];
+  // 首页推荐流处理
+  else if (/\/x\/v2\/feed\/index(?:\?|$)/.test(url)) {
+    const items = body.data?.items;
 
-    const filtered = body.data.items.filter((item) => {
+    if (!Array.isArray(items)) {
+      console.log("B站诊断：首页响应没有找到 items 数组");
+      return $done({});
+    }
+
+    const adTypes = ["ad_av", "ad_web_s", "ad_web_gif"];
+
+    const filtered = items.filter((item) => {
       if (!item || typeof item !== "object") return true;
 
       return (
@@ -90,7 +90,14 @@ https://github.com/Thelongdarkorg/loon-plugins
       );
     });
 
-    if (filtered.length !== body.data.items.length) {
+    const removed = items.length - filtered.length;
+
+    console.log(
+      "B站诊断：首页卡片 " + items.length +
+      " 条，匹配广告标记 " + removed + " 条"
+    );
+
+    if (removed > 0) {
       body.data.items = filtered;
       modified = true;
     }
