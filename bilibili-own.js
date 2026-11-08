@@ -1,9 +1,10 @@
 /*
 哔哩哔哩个人净化 - 测试版
 
-开屏规则参考用户提供的模块。
-首页信息流规则参考：
+参考：
 https://github.com/Thelongdarkorg/loon-plugins
+
+处理开屏展示列表和首页带明确广告标记的卡片。
 */
 
 (() => {
@@ -23,10 +24,34 @@ https://github.com/Thelongdarkorg/loon-plugins
     return $done({});
   }
 
+  // 如果响应中有超出 JS 安全范围的数字，原样放行，
+  // 避免重新序列化时改变视频或其他内容的数字 ID。
+  const pending = [body];
+
+  while (pending.length > 0) {
+    const value = pending.pop();
+
+    if (
+      typeof value === "number" &&
+      (
+        !Number.isFinite(value) ||
+        (Number.isInteger(value) && !Number.isSafeInteger(value))
+      )
+    ) {
+      return $done({});
+    }
+
+    if (value && typeof value === "object") {
+      for (const child of Object.values(value)) {
+        pending.push(child);
+      }
+    }
+  }
+
   const url = $request.url || "";
   let modified = false;
 
-  // 开屏：清空广告展示和事件列表
+  // 开屏：清空展示和事件列表
   if (/\/x\/v2\/splash\/(list|show|event\/list2)(?:\?|$)/.test(url)) {
     if (
       body.data &&
@@ -42,18 +67,32 @@ https://github.com/Thelongdarkorg/loon-plugins
     }
   }
 
-  // 首页：过滤带有 ad_info 的推荐卡片
-  else if (/\/x\/v2\/feed\/index(?:\?|$)/.test(url)) {
-    if (Array.isArray(body.data?.items)) {
-      const filtered = body.data.items.filter((item) => {
-        if (!item || typeof item !== "object") return true;
-        return item.ad_info == null;
-      });
+  // 首页：过滤带明确广告标记的卡片
+  else if (
+    /\/x\/v2\/feed\/index(?:\?|$)/.test(url) &&
+    Array.isArray(body.data?.items)
+  ) {
+    const adTypes = [
+      "ad_av",
+      "ad_web_s",
+      "ad_web_gif"
+    ];
 
-      if (filtered.length !== body.data.items.length) {
-        body.data.items = filtered;
-        modified = true;
-      }
+    const filtered = body.data.items.filter((item) => {
+      if (!item || typeof item !== "object") return true;
+
+      return (
+        item.ad_info == null &&
+        item.is_ad !== true &&
+        item.is_ad !== 1 &&
+        !adTypes.includes(item.card_goto) &&
+        !adTypes.includes(item.card_type)
+      );
+    });
+
+    if (filtered.length !== body.data.items.length) {
+      body.data.items = filtered;
+      modified = true;
     }
   }
 
