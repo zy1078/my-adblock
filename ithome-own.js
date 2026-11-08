@@ -1,65 +1,124 @@
 /*
- * IT之家个人净化测试版
- * 过滤条件参考可莉的 IT之家去广告脚本。
- * 不主动联网；遇到不认识的数据格式时保留原响应。
+ * IT之家去广告测试脚本
+ * 原始脚本作者：可莉
+ * 此版本将两个选项写成固定值，方便在个人模块中测试。
  */
+
 (() => {
-  const raw = typeof $response !== 'undefined' && $response
-    ? $response.body
-    : null;
+    if (!$response?.body) return $done({});
 
-  if (typeof raw !== 'string') return $done({});
+    let modified = false;
+    let body;
 
-  try {
-    const result = JSON.parse(raw);
-
-    if (!result || !result.data || !Array.isArray(result.data.list)) {
-      return $done({});
+    try {
+        body = JSON.parse($response.body);
+    } catch (e) {
+        console.log(`JSON解析失败: ${e.message}`);
+        return $done({});
     }
 
-    // true：隐藏整个顶部轮播图；false：保留轮播图中的正常内容。
+    // true：移除整个轮播图
+    // false：保留轮播图，只移除其中标记为广告的内容
     const removeAllBanners = true;
 
-    // true：隐藏置顶文章；false：保留置顶文章。
+    // true：移除置顶文章
+    // false：保留置顶文章
     const removePinnedArticles = false;
 
-    result.data.list = result.data.list.filter(item => {
-      if (!item || typeof item !== 'object') return true;
+    // 移除全部轮播图
+    const removeAllBannersFunc = () => {
+        if (!removeAllBanners) return;
 
-      const content = item.feedContent;
+        if (Array.isArray(body?.data?.list)) {
+            const originalLength = body.data.list.length;
 
-      // 过滤已知的信息流广告标记。
-      if (content && content.flag === 2) return false;
-      if (item.feedType === 10004) return false;
+            body.data.list = body.data.list.filter(item =>
+                item.feedType !== 10002
+            );
 
-      // 过滤带“广告”标签的项目。
-      if (
-        content &&
-        Array.isArray(content.smallTags) &&
-        content.smallTags.some(tag => tag && tag.text === '广告')
-      ) {
-        return false;
-      }
+            modified ||= (originalLength !== body.data.list.length);
+        }
+    };
 
-      if (removeAllBanners && item.feedType === 10002) return false;
-      if (removePinnedArticles && item.feedType === 10003) return false;
+    // 移除置顶文章
+    const removePinnedArticlesFunc = () => {
+        if (!removePinnedArticles) return;
 
-      return true;
-    });
+        if (Array.isArray(body?.data?.list)) {
+            const originalLength = body.data.list.length;
 
-    // 如果保留轮播图，只移除其中带广告标记的内容。
-    for (const item of result.data.list) {
-      const content = item && item.feedContent;
+            body.data.list = body.data.list.filter(item =>
+                item.feedType !== 10003
+            );
 
-      if (content && Array.isArray(content.focusNewsData)) {
-        content.focusNewsData = content.focusNewsData.filter(
-          entry => !entry || !entry.isAd
-        );
-      }
-    }
+            modified ||= (originalLength !== body.data.list.length);
+        }
+    };
 
-    return $done({ body: JSON.stringify(result) });
-  } catch (_) {
-    return $done({});
-  }
+    // 移除轮播图中的广告
+    const removeBannerAdsFunc = () => {
+        if (!Array.isArray(body?.data?.list)) return;
+
+        body.data.list.forEach(item => {
+            if (
+                item.feedContent?.focusNewsData &&
+                Array.isArray(item.feedContent.focusNewsData)
+            ) {
+                const originalLength =
+                    item.feedContent.focusNewsData.length;
+
+                item.feedContent.focusNewsData =
+                    item.feedContent.focusNewsData.filter(ad =>
+                        !ad.isAd
+                    );
+
+                modified ||= (
+                    originalLength !==
+                    item.feedContent.focusNewsData.length
+                );
+            }
+        });
+    };
+
+    // 移除信息流中带已知广告标记的项目
+    const removeFeedAdsFunc = () => {
+        if (!Array.isArray(body?.data?.list)) return;
+
+        const originalLength = body.data.list.length;
+
+        body.data.list = body.data.list.filter(item => {
+            if (
+                item.feedContent?.flag === 2 ||
+                item.feedType === 10004
+            ) {
+                return false;
+            }
+
+            if (
+                item.feedContent?.smallTags &&
+                Array.isArray(item.feedContent.smallTags)
+            ) {
+                const hasAdTag =
+                    item.feedContent.smallTags.some(tag =>
+                        typeof tag.text === 'string' &&
+                        tag.text === '广告'
+                    );
+
+                if (hasAdTag) return false;
+            }
+
+            return true;
+        });
+
+        modified ||= (originalLength !== body.data.list.length);
+    };
+
+    removeAllBannersFunc();
+    removePinnedArticlesFunc();
+    removeBannerAdsFunc();
+    removeFeedAdsFunc();
+
+    $done(modified ? {
+        body: JSON.stringify(body),
+    } : {});
 })();
